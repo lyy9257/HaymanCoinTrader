@@ -1,0 +1,1 @@
+SELECT * FROM coin_data.binance_15m order by Date DESC, Time DESC Limit 3;
