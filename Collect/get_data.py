@@ -117,7 +117,7 @@ if __name__ == '__main__':
     ticker_list = ['BTCUSDT', 'ETHUSDT', 'ETHBTC' , 'XRPUSDT',
         'BTCBUSD', 'ETHBUSD', 'XRPBUSD', 'XRPBTC']
 
-    kline_size = '15m'    
+    kline_size = '5m'    
 
     bi = Binance(kline_size)
     

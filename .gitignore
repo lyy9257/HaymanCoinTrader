@@ -3,4 +3,4 @@ ETHUSDT-5m-data.csv
 BTCUSDT-5m-data.csv
 XRPUSDT-5m-data.csv
 config.cfg
-    
+    Strategy/envelop.py

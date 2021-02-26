@@ -32,9 +32,6 @@ class CoinPriceLog():
         self.db_name = 'coin_data'
         self.table_name = 'temp'
         
-        self.db_url = "mysql+mysqldb://" + self.db_id + ":" + \
-            self.db_pw + "@" + self.db_ip + ":" + self.db_port + "/" + self.db_name 
-        
         ### 저장할 데이터베이스 호출(pymysql)
         self.db_conn = pymysql.connect(
             host = self.db_ip,
@@ -83,7 +80,7 @@ class CoinPriceLog():
 
         return result
 
-    ## 레코드 입력
+    ## 데이터 입력
     def insert_bulk_record(self, record):
         
         ### 입력할 데이터 입력
@@ -110,7 +107,7 @@ class CoinPriceLog():
         
         ### 테이블 미존재 시 테이블 생성
         print("[INFO] Target Input Data length is %s." %len(data.index))
-
+    
         try:
             self.create_price_table()
 
@@ -138,3 +135,53 @@ class CoinPriceLog():
             self.insert_bulk_record(data)
 
         return True
+
+# 코인 가격로그 검색
+class SearchPriceLog():
+
+    ## 초기화
+    def __init__(self, broker_name, time_interval):
+
+        ### 인풋 파라미터 설정
+        self.broker_name = broker_name
+        self.time_interval = time_interval
+        
+        ### import config file
+        self.prev_path = os.path.dirname(os.path.dirname(__file__))
+        self.config = configparser.ConfigParser()
+        self.config.read(self.prev_path + '\config.cfg', encoding = 'utf-8')
+
+        ### Read config about database
+        self.db_ip = self.config.get('DATABASE', 'DB_IP')
+        self.db_port = self.config.get('DATABASE', 'DB_PORT')
+        self.db_id = self.config.get('DATABASE', 'DB_ID')
+        self.db_pw = self.config.get('DATABASE', 'DB_PW')
+
+        ### Database, table name 설정 (사용자 입력)
+        self.db_name = 'coin_data'
+        self.table_name = '%s_%s' %(self.broker_name, self.time_interval)
+        
+        ### 저장할 데이터베이스 호출(pymysql)
+        self.db_conn = pymysql.connect(
+            host = self.db_ip,
+            user = self.db_id,
+            password = self.db_pw,
+            db = self.db_name,
+            charset = 'utf8'
+        )
+
+    def price_data(self, ticker):
+        sql_syntax = """
+            SELECT * FROM %s.%s_%s WHERE Ticker = '%s' order by Date DESC, Time DESC
+        """ %(self.db_name, self.broker_name, self.time_interval, ticker)
+
+        ### 쿼리 실행 
+        cur = self.db_conn.cursor(pymysql.cursors.DictCursor)
+        cur.execute(sql_syntax)
+        
+        result = pd.DataFrame(cur.fetchall())
+
+        return result
+    
+
+    
