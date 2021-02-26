@@ -136,6 +136,7 @@ class CoinPriceLog():
 
         return True
 
+
 # 코인 가격로그 검색
 class SearchPriceLog():
 
@@ -170,6 +171,7 @@ class SearchPriceLog():
             charset = 'utf8'
         )
 
+    ## 가격 데이터 검색
     def price_data(self, ticker):
         sql_syntax = """
             SELECT * FROM %s.%s_%s WHERE Ticker = '%s' order by Date DESC, Time DESC
@@ -183,5 +185,112 @@ class SearchPriceLog():
 
         return result
     
-
+# 백테스트 결과 DB 컨트롤
+class BackTestResult():
     
+    ## 초기화
+    def __init__(self):
+        
+        ### import config file
+        self.prev_path = os.path.dirname(os.path.dirname(__file__))
+        self.config = configparser.ConfigParser()
+        self.config.read(self.prev_path + '\config.cfg', encoding = 'utf-8')
+
+        ### Read config about database
+        self.db_ip = self.config.get('DATABASE', 'DB_IP')
+        self.db_port = self.config.get('DATABASE', 'DB_PORT')
+        self.db_id = self.config.get('DATABASE', 'DB_ID')
+        self.db_pw = self.config.get('DATABASE', 'DB_PW')
+
+        ### Database, table name 설정 (사용자 입력)
+        self.db_name = 'coin_backtest'
+        self.table_name = 'temp'
+        
+        ### 저장할 데이터베이스 호출(pymysql)
+        self.db_conn = pymysql.connect(
+            host = self.db_ip,
+            user = self.db_id,
+            password = self.db_pw,
+            db = self.db_name,
+            charset = 'utf8'
+        )
+
+    ## DB 생성
+    def create_db(self):
+        ### 구문작성
+        sql_syntax = 'CREATE DATABASE %s' %self.db_name       
+        
+        ### 커밋후 저장, 종료
+        cur = self.db_conn.cursor()
+        cur.execute(sql_syntax)
+        self.db_conn.commit()
+        
+    ## 전체 백테스트 결과 저장용
+    ## name, date, result, cagr, mdd, p/f ratio
+    def create_backtest_result_table(self):
+        
+        ### 구문 작성
+        sql_syntax = """
+            CREATE TABLE backtest_result
+            (
+                name varchar(255), date int, result float, cagr float,
+                mdd float, hitratio float
+            );
+            """
+
+        ### 커밋후 저장, 종료
+        cur = self.db_conn.cursor()
+        cur.execute(sql_syntax)
+        self.db_conn.commit()
+
+    ### 백테스트 히스토리 결과 저장용
+    ### Date, time, position, balance, profit_percent, mdd
+    def create_history_result_table(self, strategy_name):
+
+        ### 구문 작성
+        sql_syntax = """
+            CREATE TABLE history_%s
+            (
+                date int, time int, position varchar(8), balance float,
+                profit_percent float, mdd float
+            );
+            """ %strategy_namec
+
+        ### 커밋후 저장, 종료
+        cur = self.db_conn.cursor()
+        cur.execute(sql_syntax)
+        self.db_conn.commit()
+    
+    ## 총 데이터 입력
+    def save(self, target_table, data):
+        
+        ### 테이블 미존재 시 테이블 생성
+        print("[INFO] Target Input Data length is %s." %len(data.index))
+    
+        try:
+            self.create_price_table()
+
+        except:
+            pass
+        
+        ### 1000행 넘어갈 경우 1000행씩 나눠서 인서트
+        if len(data.index) > 1000:
+            slice_unit = int(len(data.index)/1000)
+            start = 0
+            
+            ### 0-999, 1000-1999, *** 순으로 입력
+            for x in range(slice_unit):
+                end = start + 999
+                
+                # 끝이 넘어가면 끝을 데이터 행갯수로 설정
+                if end > len(data.index):
+                    end = len(data.index)
+
+                self.insert_bulk_record(data.iloc[start:end])
+                start = end + 1
+
+        ### 1000개 미만이면 그냥 삽입함
+        else:
+            self.insert_bulk_record(data)
+
+        return True

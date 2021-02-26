@@ -13,9 +13,10 @@ class StrategyTemplate():
     
     ## 초기화
     def __init__(self):
-        self.strategy_name = 'Envelop'
-        self.price_db = Collect.mysql_con.SearchPriceLog('Binance', '15m')
-        self.trade_target = 'BTCUSDT'
+        
+        self.strategy_name = 'Envelop' ### 로직 이름
+        self.price_db = Collect.mysql_con.SearchPriceLog('Binance', '15m') ### 데이터 커넥션
+        self.trade_target = 'BTCUSDT' ### 트레이딩 타겟
     
     ## 주가데이터 호출
     def call_price_data(self):
@@ -35,49 +36,20 @@ class StrategyTemplate():
 
     ## 지표 데이터 추가
     def make_ta_data(self, price_data):       
-        open = price_data['Open']
-        high = price_data['High']
-        low = price_data['Low']
-        close = price_data['Close']
-        volume = price_data['Volume']
-
-        self._check_three_candle(price_data)
-
-        price_data['RSI_2'] = talib.RSI(close, timeperiod=2)
-        price_data['MA_100'] = talib.MA(low, timeperiod=100, matype=0)
-
-        upperband, middleband, lowerband = talib.BBANDS(
-            close, timeperiod=15, nbdevup=2, nbdevdn=2, matype=0
-        )
-        price_data['BB_Upper'] = upperband
-        price_data['BB_Middle'] = middleband
-        price_data['BB_Lower'] = lowerband
-
-        price_data['MA_5'] = talib.MA(close, timeperiod=5, matype=0)
-        price_data['Env_5_1_Down'] = (price_data['MA_5'] * 0.99)
-        price_data['Env_5_1_Down'] = (price_data['MA_5'] * 1.01)
-        price_data['Vol_max_3'] = price_data['Volume'].rolling(3).max()
-
-        price_data = price_data.fillna(0).round(2)
         
-        return price_data
+        return ta_added_data
 
     ## 매수타점 추가
     def _make_buy_signal(self, row):
-        cnt = 0
-        if row['RSI_2'] < 10:
-            cnt += 1
-        
-        if row['Candle_3'] == -3:
-            cnt += 1
 
-        if row['Volume'] == row['Vol_max_3']:
-            cnt +=1
+        ''' 
+        * 작성방법 *
+        입력을 DataFrame Index를 받습니다.
+        인덱스 데이터를 기반으로
+        체크한 결과가 True or False가 출력되게 작성합니다.
+        '''
 
-        if row['Low'] < row['Env_5_1_Down']:
-            cnt +=1 
-
-        if cnt == 4:
+        if x == True: 
             return True
         
         else:

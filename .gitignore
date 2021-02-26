@@ -4,3 +4,4 @@ BTCUSDT-5m-data.csv
 XRPUSDT-5m-data.csv
 config.cfg
     Strategy/envelop.py
+Backtest/Strategy/envelop.py
