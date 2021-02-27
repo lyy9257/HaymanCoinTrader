@@ -2,6 +2,7 @@ import pandas as pd
 import talib
 import time
 
+### 타 폴더에 있는 패키지 사용을 위해 연결
 import os
 import sys
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
@@ -13,132 +14,83 @@ class StrategyTemplate():
     
     ## 초기화
     def __init__(self):
+
+        ### Backtest Parameter 설정
+        self.strategy_name = ' '
+        self.broker = ' '
+        self.time_interval = ' '
+        self.trade_target = ' '
+
+        self.price_db = Collect.mysql_con.SearchPriceLog(
+            self.broker,  self.time_interval
+            )
         
-        self.strategy_name = 'Envelop' ### 로직 이름
-        self.price_db = Collect.mysql_con.SearchPriceLog('Binance', '15m') ### 데이터 커넥션
-        self.trade_target = 'BTCUSDT' ### 트레이딩 타겟
-    
-    ## 주가데이터 호출
+    ## 가격 데이터 호출
+    ## input : x (초기화 때 설정한 타임 인터벌, 티커, 브로커 기반으로 호출)
+    ## output : price_data
     def call_price_data(self):
-        price_data = self.price_db.price_data(self.trade_target)[::-1].reset_index(drop=True)
+        price_data = self.price_db.price_data(self.trade_target)[::-1]
+        price_data = price_data.drop_duplicates().reset_index(drop=True) ## 중복데이터 삭제
         
         return price_data
 
-    ## 적삼병, 흑삼병 체크용
-    def _check_three_candle(self, price_data):
-        loop_range = len(price_data.index) - 2
-        
-        price_data['Candle'] = price_data[['Open', 'Close']].apply(
-            lambda x : x['Open'] < x['Close'] and 1 or -1 , axis=1
-        ) 
-        
-        price_data['Candle_3'] = price_data['Candle'].rolling(3).sum().fillna(0)
-
     ## 지표 데이터 추가
+    ## input : price data
+    ## output : ta_added_data (기술적 분석 데이터가 추가된 데이터)
     def make_ta_data(self, price_data):       
         
-        return ta_added_data
+        ### 지표 제작용 데이터 연결
+        _open = price_data['Open']
+        _high = price_data['High']
+        _low = price_data['Low']
+        _close = price_data['Close']
+        _volume = price_data['Volume']
 
+        ### 지표추가
+        ### 여기서 부터 사용자가 원하는 대로 수식 작성
+        
+        return price_data
+
+    
     ## 매수타점 추가
-    def _make_buy_signal(self, row):
-
-        ''' 
-        * 작성방법 *
-        입력을 DataFrame Index를 받습니다.
-        인덱스 데이터를 기반으로
-        체크한 결과가 True or False가 출력되게 작성합니다.
-        '''
-
-        if x == True: 
+    ## 특정 조건에 대해서 True, False로 반환될 수 있게
+    ## 수식을 작성하면 됩니다.
+    ## input : Dataframe each row
+    ## output : bool(True, False)
+    def make_buy_signal(self, row):
+        
+        ### 매수타점 산출식 작성
+        something = True
+        
+        ### 산출식 결과가 True면 집행
+        if something == True:
             return True
         
         else:
             return False
         
     ## 매도타점 추가
-    def _make_sell_signal(self, row):
-        cnt = 0
-
-        ## 익절
-        if row['Close'] > row['MA_5']:
-            cnt += 1
+    ## 특정 조건에 대해서 True, False로 반환될 수 있게
+    ## 수식을 작성하면 됩니다.
+    ## input : Dataframe each row
+    ## output : bool(True, False)
+    def make_sell_signal(self, row):
         
-        ## 손절
-        if row['Close'] < row['MA_100']:
-            cnt += 1
+        ### 매도타점 산출식 작성
+        something = True
         
-        if cnt > 0:
+        ### 산출식 결과가 True면 집행
+        if something == True:
             return True
-
+        
         else:
             return False
+    
+    ## 매수가 설정
+    def make_buy_price(self):
 
         return True
         
-    ## 시뮬레이션
-    def simulation(self):
-        raw_data = self.call_price_data()
-        ta_add_data = self.make_ta_data(raw_data)
-        ta_add_data['Buy'] = ta_add_data.apply(lambda x: self._make_buy_signal(x), axis=1)
-
-        ### 최초 백테스트 환경설정
-        start_seed = 100
-        row_amount = len(ta_add_data.index)
-        print('[INFO] Start Backtest')
-        k = 1
-        position = 'Empty'
-        position_list = []
-
-        for r in ta_add_data.iterrows():
-            row = r[1]
-            print('[INFO] (%s-%s)' %(k, row_amount))
-            print('[INFO] Now Position is %s' %position)
-            
-            ### 제로 포지션 
-            if position == 'Empty':
-                if row['Buy'] == True:
-                    position = 'PreBuy'
-                else:
-                    pass
-
-            ### 매수예정(시가매수)
-            elif position == 'PreBuy':
-                print('[INFO] Buy at Start')
-                position = 'Buy'
-                buy_price = row['Open']
-
-            ### 매수포지션 있음, 매도감시
-            elif position == 'Buy':
-                if self._make_sell_signal(row) == True:
-                    print('[INFO] Sell Next Start Time')
-                    position = 'PreSell'
-                
-                else:
-                    pass
-            
-            elif position == 'PreSell':
-                print('[INFO] Sell at Start')
-                position = 'Empty'
-                sell_price = row['Open']
-
-            else:
-                return False
-            
-            position_list.append(position)
-            k += 1
-
-        ta_add_data['Trade'] = position_list
-        print(ta_add_data[ta_add_data['Trade'] != 'Empty'])
-
+    ## 매도가 설정
+    def make_sell_price(self):
         return True
-    
-
-if __name__ == '__main__':
-    start = time.time()
-    
-    envelop = StrategyTemplate()
-    envelop.simulation()
-    
-    end = time.time()
-    print('총 소요시간 : %2.f Sec.' %(end - start))
-    
