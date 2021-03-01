@@ -6,6 +6,8 @@ import os
 import sys
 import time
 
+from datetime import datetime
+
 # 타 폴더에 있는 패키지 사용을 위해 연결
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 
@@ -13,28 +15,26 @@ sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 import Collect.mysql_con
 
 # 전략
-from Strategy import envelop
+# example 
+from Strategy import example
 
 # 백테스트 Class
 # 현물 롱만 지원
 class Backtest():
     def __init__(self):
-        self.strategy = envelop.StrategyTemplate()
-        
+        self.strategy = example.StrategyTemplate()
+        self.backtest_store = Collect.mysql_con.BackTestResult(self.strategy.strategy_name)
+
     ## 백테스트 준비
     def _init_backtest(self):
         print('==================================================')
         print('< Backtest Option >')
         print('- Strategy name : %s' %self.strategy.strategy_name)
         print('- Broker : %s' %self.strategy.broker)
+        print('- Buying Fee : %s %%' %self.strategy.buy_fee)
+        print('- Selling Fee : %s %%' %self.strategy.sell_fee)
         print('- Time interval : %s' %self.strategy.time_interval)
         print('- Trade Target : %s' %self.strategy.trade_target)
-        print('==================================================')
-        print('< Basket Option >')
-        print('- Start Amount : ')
-        print('- Margin : ')
-        print('- [Future] Max_Long_Ratio :')
-        print('- [Future] Max_Short_Ratio  :')
         print('==================================================')
 
         return True
@@ -46,74 +46,90 @@ class Backtest():
         ta_add_data['Buy'] = ta_add_data.apply(lambda x: self.strategy.make_buy_signal(x), axis=1)
 
         ### 최초 백테스트 환경설정
-        start_seed = 10000
-        row_amount = len(ta_add_data.index)
+        start_seed = 100
         print('[INFO] Start Backtest')
-        k = 1
+
         position = 'Empty'
         position_list = []
         amount_profit = [start_seed]
 
         for r in ta_add_data.iterrows():
             row = r[1]
-            # print('[INFO] (%s-%s)' %(k, row_amount))
-            # print('[INFO] Now Position is %s' %position)
             
             ### 제로 포지션 
             if position == 'Empty':
                 if row['Buy'] == True:
-                    position = 'PreBuy'
+                    position = 'PreBuy_Long'
+                    buy_price = self.strategy.make_buy_price(row)
+
                 else:
                     pass
                 
                 amount_profit.append(amount_profit[-1])
 
             ### 매수예정(시가매수)
-            elif position == 'PreBuy':
-                # print('[INFO] Buy at Start')
-                position = 'Buy'
-                buy_price = row['Open']
+            elif position == 'PreBuy_Long':
+                position = 'Buy_Long' # 다음 봉에서 매수
                 
-                ### 시가에 매수했으므로 종가기준 수익률
-                profit = amount_profit[-1] * row['Close'] / row['Open'] * (1+0.025/100)
+                ### 종가기준 수익률 산출
+                ### 종가 / 매수가
+                profit = amount_profit[-1] * row['Close'] / buy_price * (1-self.strategy.buy_fee/100)
                 amount_profit.append(profit)
 
+                ### 사용자에게 안내
+                print("[INFO] Entry Long Position")
+                print("[INFO] Buy Price = %s" %buy_price)
+
             ### 매수포지션 있음, 매도감시
-            elif position == 'Buy':
+            elif position == 'Buy_Long':
                 if self.strategy.make_sell_signal(row) == True:
-                    # print('[INFO] Sell Next Start Time')
-                    position = 'PreSell'
+                    position = 'PreSell_Long'
+                    sell_price = self.strategy.make_buy_price(row)
+
                 
                 else:
                     pass
                 
-                ### 전봉 종가 = 시가이므로 종가/시가
+                ### 종가/시가 변화율로 수익률 산정
                 profit = amount_profit[-1] * row['Close'] / row['Open']
                 amount_profit.append(profit)
 
-
             ### 매도예정(시가매도)
-            elif position == 'PreSell':
-                # print('[INFO] Sell at Start')
+            elif position == 'PreSell_Long':
                 position = 'Empty'
-                sell_price = row['Open']
+                sell_price = self.strategy.make_sell_price(row)
                 
-                ### 전봉 시가에 팔았으므로 수익률 변동은 없음.
-                ### 시장가에 팔았다 가정하고 수수료 차감
-                amount_profit.append(amount_profit[-1] * (1-0.075/100))
+                ### 시가대비 매도가 수익률로 봉 기준 숭기률 산출
+                profit = amount_profit[-1] * row['Open'] / sell_price * (1-self.strategy.buy_fee/100)
+                amount_profit.append(profit) 
+                
+                print("[INFO] Exit Long Position")
+                print("[INFO] Exit Price = %s" %sell_price)
+
+                total_profit = (sell_price / buy_price - 1) * 100
+
+                print("[INFO] Total Profit(fee ignore) = %.2f %%" %total_profit)
 
             else:
                 return False
             
+            ### 백테스트 정상 작동여부 체크
+            ### 매수준비, 매도준비 포지션은 연속하여 나올 수 없으므로 에러 처리
+            if len(position_list) > 0:
+                if position_list[-1] == position and position == 'PreBuy_Long':
+                    raise ValueError
+
+                if position_list[-1] == position and position == 'PreSell_Long':
+                    raise ValueError
+
             ### 현재 포지션 기록
             position_list.append(position)
-            k += 1
 
         amount_profit = amount_profit[1:]
-        ta_add_data['Trade'] = position_list
+        ta_add_data['Position'] = position_list
         ta_add_data['Profit'] = amount_profit
         
-        result = ta_add_data.round(2)
+        result = ta_add_data.round(6) ##
         del ta_add_data
         
         return result
@@ -124,35 +140,57 @@ class Backtest():
         arr_v = np.array(profit_result)
         peak_lower = np.argmax(np.maximum.accumulate(arr_v) - arr_v)
         peak_upper = np.argmax(arr_v[:peak_lower])
+        
         mdd = (arr_v[peak_lower] - arr_v[peak_upper]) / arr_v[peak_upper] * 100
+        mdd = round(mdd, 4) ## 4자리수까지 반올림
 
         return mdd
 
     ## 백테스트 결과 생성
     def _make_backtest_result(self, result):
+        start_amount = result.iat[0, result.columns.get_loc('Profit')]
+        end_amount = result.iat[-1, result.columns.get_loc('Profit')]
         total_trade_year = int(result.iat[-1, result.columns.get_loc('Date')]/10000) - int(result.iat[0, result.columns.get_loc('Date')]/10000)
-        total_profit = round(result.iat[-1, result.columns.get_loc('Profit')] / result.iat[0, result.columns.get_loc('Profit')], 4)  # Total Profit
-        cagr = total_profit ** (1/total_trade_year) - 1 * 100  
+        total_profit = round(result.iat[-1, result.columns.get_loc('Profit')] / result.iat[0, result.columns.get_loc('Profit')], 4) - 1  # Total Profit
+        ## cagr = (total_profit ** (1/total_trade_year) - 1) * 100  
         mdd = self._get_mdd(result['Profit'])
                
         print('==================================================')
         print('< Backtest Result >')
-        print('- Start Amount : %s' %result.iat[0, result.columns.get_loc('Profit')])
-        print('- End Amount : %s' %result.iat[-1, result.columns.get_loc('Profit')])
+        print('- Start Amount : %s' %start_amount)
+        print('- End Amount : %s' %end_amount)
         print('- Total Trade Year : %s Year' %total_trade_year)
         print('- Total_profit : %.2f %%' %(total_profit * 100))
-        print('- CAGR : %.2f %%' %cagr)
         print('- MDD : %.2f %%' %mdd)
         print('==================================================')
+        
+        ### 백테스트 결과 저장
+        now = datetime.now()
+        date = now.strftime("%Y%m%d") # 시작시간 
+        time = now.strftime("%H%M%S") # 시작 HHMMSS
+        
+        describe_result = [date, time, self.strategy.strategy_name, start_amount,
+            end_amount, total_trade_year, total_profit, mdd
+        ] # 요약 결과
+        history_result = result[['Date', 'Time', 'Open', 'High',
+            'Low', 'Close', 'Volume', 'Position', 'Profit']
+        ] # 전체 히스토리
+
+        self._save_describe_result(describe_result) # 요약결과
+        self._save_history(history_result, date, time) #히스토리
 
         return True
 
     ## 요약 결과 저장
-    def _save_describe_result(self):
+    def _save_describe_result(self, result):
+        self.backtest_store.save(result, 'describe', 0, 0)
+
         return True
 
     ## 전체 트레이딩 히스토리 저장
-    def _save_history(self):
+    def _save_history(self, result, date, time):
+        self.backtest_store.save(result, 'history', date, time)
+
         return True
 
     ## 전체 루틴
@@ -163,9 +201,7 @@ class Backtest():
         self._init_backtest() # 환경설정
         result = self._simulation() # 백테스트
         self._make_backtest_result(result) # 결과생성
-        # 요약결과 DB에 저장
-        # 상세 백테스트 결과 DB에 저장
-
+        
         end = time.time()
         print('총 소요시간 : %.3f Sec.' %(end - start))
 

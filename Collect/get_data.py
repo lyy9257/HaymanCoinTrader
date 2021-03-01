@@ -1,5 +1,3 @@
-
-# IMPORTS
 import configparser
 import datetime
 import pandas as pd
@@ -10,16 +8,18 @@ import time
 from binance.client import Client
 from datetime import timedelta, datetime
 from dateutil import parser
-from tqdm import tqdm_notebook #(Optional, used for progress-bars)
 
 from mysql_con import CoinPriceLog
 
-## 데이터 호출
+# 데이터 호출
+# 바이낸스에서 호출
 class Binance():
-    def __init__(self, kline_size):        
+    
+    ## 초기화
+    def __init__(self, time_interval):        
 
         ### input data
-        self.kline_size = kline_size
+        self.time_interval = time_interval
 
         ### get prev path 
         self.prev_path = os.path.abspath(os.path.join(os.path.dirname(__file__),".."))
@@ -31,14 +31,14 @@ class Binance():
         self.binance_api_key = self.config.get('API', 'BINANCE_PUBLIC')    #Enter your own API-key here
         self.binance_api_secret = self.config.get('API', 'BINANCE_SECRET') #Enter your own API-secret here
 
-        ### CONSTANTS
+        ### binance connetion
         self.binsizes = {"1m": 1, "5m": 5, "15m": 15,  "30m": 30, "1h": 60, "1d": 1440}
         self.binance_client = Client(
             api_key = self.binance_api_key, api_secret = self.binance_api_secret
         )
 
         ### Database
-        self.coin_db = CoinPriceLog('binance', self.kline_size)
+        self.coin_db = CoinPriceLog('binance', self.time_interval)
         
     ## FUNCTIONS
     def _minutes_of_new_data(self, symbol, data):
@@ -50,7 +50,7 @@ class Binance():
             old = datetime.strptime('1 Jan 2015', '%d %b %Y')
             
         new = pd.to_datetime(
-            self.binance_client.get_klines(symbol=symbol, interval=self.kline_size)[-1][0], unit='ms'
+            self.binance_client.get_klines(symbol=symbol, interval=self.time_interval)[-1][0], unit='ms'
         )
         
         return old, new
@@ -73,20 +73,20 @@ class Binance():
 
         oldest_point, newest_point = self._minutes_of_new_data(symbol, data_df)
         delta_min = (newest_point - oldest_point).total_seconds()/60
-        available_data = math.ceil(delta_min/self.binsizes[kline_size])
+        available_data = math.ceil(delta_min/self.binsizes[self.time_interval])
 
         if oldest_point == datetime.strptime('1 Jan 2014', '%d %b %Y'):
             print('[INFO] Downloading all available %s data for %s. Be patient..!'
-            % (self.kline_size, symbol)
+            % (self.time_interval, symbol)
             )
 
         else:
             print('[INFO] Downloading %d minutes of new data available for %s, i.e. %d instances of %s data.'
-            % (delta_min, symbol, available_data, self.kline_size)
+            % (delta_min, symbol, available_data, self.time_interval)
             )
 
         klines = self.binance_client.get_historical_klines(
-            symbol, self.kline_size, oldest_point.strftime("%d %b %Y %H:%M:%S"), newest_point.strftime("%d %b %Y %H:%M:%S")
+            symbol, self.time_interval, oldest_point.strftime("%d %b %Y %H:%M:%S"), newest_point.strftime("%d %b %Y %H:%M:%S")
         )
 
         data = pd.DataFrame(
@@ -111,20 +111,24 @@ class Binance():
 
     ## DB에 저장
     def save_to_database(self, data):
+        data = data.drop_duplicates()
         self.coin_db.save(data)
   
+# 파일 실행 시
 if __name__ == '__main__':
-    ticker_list = ['BTCUSDT', 'ETHUSDT', 'ETHBTC' , 'XRPUSDT',
-        'BTCBUSD', 'ETHBUSD', 'XRPBUSD', 'XRPBTC']
+    ticker_list = ['BTCUSDT', 'ETHUSDT', 'ETHBTC',
+        'XRPUSDT', 'BTCBUSD', 'ETHBUSD', 'XRPBUSD',
+        'XRPBTC']
 
-    kline_size = '5m'    
+    time_interval_list = ('1m', '5m', '15m', '30m', '1h', '1d')
 
-    bi = Binance(kline_size)
-    
-    # ticker_list = get.get_ticker_list('USDT')
+    for ti in time_interval_list:
+        bi = Binance(ti)
+        
+        # ticker_list = get.get_ticker_list('USDT')
 
-    for ti in ticker_list:
-        data = bi.price_data(ti)
-        bi.save_to_database(data)
+        for ti in ticker_list:
+            data = bi.price_data(ti)
+            bi.save_to_database(data)
 
    
